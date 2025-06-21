@@ -223,13 +223,4 @@ const Providers = {
 
 
 
-async function translateText(text, targetLang = 'es') {
-    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`;
-    try {
-        const response = await Spicetify.CosmosAsync.get(url);
-        return response[0].map(item => item[0]).join('');
-    } catch (e) {
-        console.error("Error al traducir:", e);
-        return text; // fallback
-    }
-}
+
