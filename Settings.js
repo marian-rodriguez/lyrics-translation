@@ -683,6 +683,13 @@ function openConfig() {
 					options: languageOptions,
 				},
 				{
+					desc: "LibreTranslate Target Language.",
+					info: "Choose the language you want to translate the lyrics to using LibreTranslate (free service). When the language is changed, the lyrics reloads.",
+					key: "libretranslate-target-language",
+					type: ConfigSelection,
+					options: languageOptions,
+				},
+				{
 					desc: "Clear Memory Cache",
 					info: "Loaded lyrics are cached in memory for faster reloading. Press this button to clear the cached lyrics from memory without restarting Spotify.",
 					key: "clear-memore-cache",

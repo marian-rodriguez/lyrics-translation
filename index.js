@@ -50,6 +50,7 @@ const CONFIG = {
 		"ja-detect-threshold": localStorage.getItem("lyrics-plus:visual:ja-detect-threshold") || "40",
 		"hans-detect-threshold": localStorage.getItem("lyrics-plus:visual:hans-detect-threshold") || "40",
 		"musixmatch-translation-language": localStorage.getItem("lyrics-plus:visual:musixmatch-translation-language") || "none",
+		"libretranslate-target-language": localStorage.getItem("lyrics-plus:visual:libretranslate-target-language") || "en",
 		"fade-blur": getConfig("lyrics-plus:visual:fade-blur"),
 		"fullscreen-key": localStorage.getItem("lyrics-plus:visual:fullscreen-key") || "f12",
 		"synced-compact": getConfig("lyrics-plus:visual:synced-compact"),
@@ -88,6 +89,11 @@ const CONFIG = {
 			on: getConfig("lyrics-plus:provider:local:on"),
 			desc: "Provide lyrics from cache/local files loaded from previous Spotify sessions.",
 			modes: [KARAOKE, SYNCED, UNSYNCED],
+		},
+		libretranslate: {
+			on: getConfig("lyrics-plus:provider:libretranslate:on", true),
+			desc: "Free translation service using LibreTranslate. No API key required. Provides automatic translation of lyrics to your selected language.",
+			modes: [], // This provider only provides translations, not original lyrics
 		},
 	},
 	providersOrder: localStorage.getItem("lyrics-plus:services-order"),
@@ -366,96 +372,33 @@ class LyricsContainer extends react.Component {
 			}
 		}
 
-		this.lyricsSource(tempState, finalMode);
-
-		// if song changed one time
-		if (tempState.uri !== this.state.uri || refresh) {
-			// when a song starts for the first time and language-override is selected, the lyrics are converted to the specified language.
-			// however, when switching it off again, the detected language needs to be known, so defaultLanguage has been introduced.
-			const defaultLanguage = Utils.detectLanguage(this.state.currentLyrics);
-			const language =
-				CONFIG.visual["translate:detect-language-override"] !== "off" ? CONFIG.visual["translate:detect-language-override"] : defaultLanguage;
-			const friendlyLanguage = language && new Intl.DisplayNames(["en"], { type: "language" }).of(language.split("-")[0])?.toLowerCase();
-			const targetConvert = CONFIG.visual[`translation-mode:${friendlyLanguage}`];
-
-			const isMemorey = CACHE[tempState.uri]?.[targetConvert];
-			if (CONFIG.visual.translate && defaultLanguage && !isMemorey) {
-				this.translateLyrics(language, this.state.currentLyrics, targetConvert).then((translated) => {
-					const res = { [targetConvert]: translated };
-					// Cache translated lyrics
+		// Always translate to Spanish after fetching lyrics
+		const originalLyrics = tempState[CONFIG.modes[finalMode]];
+		if (originalLyrics && !CACHE[tempState.uri]?.spanishTranslation) {
+			this.translateToSpanish(originalLyrics).then((translated) => {
+				if (translated) {
+					const res = { spanishTranslation: translated };
 					CACHE[tempState.uri] = { ...CACHE[tempState.uri], ...res };
 					this.setState({ ...res });
-				});
-			}
-
-			// reset and apply
-			this.setState({
-				furigana: null,
-				romaji: null,
-				hiragana: null,
-				katakana: null,
-				hangul: null,
-				romaja: null,
-				cn: null,
-				hk: null,
-				tw: null,
-				musixmatchTranslation: null,
-				neteaseTranslation: null,
-				...tempState,
-				language: defaultLanguage,
+				}
 			});
-			return;
 		}
 
-		this.setState({ ...tempState });
+		// Set the current lyrics (Spanish translation if available, otherwise original)
+		this.setState({ 
+			...tempState,
+			currentLyrics: tempState.spanishTranslation || tempState[CONFIG.modes[finalMode]]
+		});
 	}
 
 	lyricsSource(lyricsState, mode) {
 		if (!lyricsState) return;
 
-		const lang = this.provideLanguageCode(this.state.currentLyrics);
-		const friendlyLanguage = lang && new Intl.DisplayNames(["en"], { type: "language" }).of(lang.split("-")[0])?.toLowerCase();
-
-		if (!this.displayMode) {
-			this.displayMode = CONFIG.visual[`translation-mode:${friendlyLanguage}`];
-		}
-
 		// get original Lyrics
 		const lyrics = lyricsState[CONFIG.modes[mode]];
 
-		if (CONFIG.visual.translate) {
-			this.state.currentLyrics = lyricsState[CONFIG.visual[`translation-mode:${friendlyLanguage}`]] ?? lyrics;
-		} else {
-			this.state.currentLyrics = lyricsState[CONFIG.visual["translate:translated-lyrics-source"]] ?? lyrics;
-		}
-
-		// Convert Mode re-fresh
-		if (
-			this.translate !== CONFIG.visual.translate ||
-			this.languageOverride !== CONFIG.visual["translate:detect-language-override"] ||
-			this.displayMode !== CONFIG.visual[`translation-mode:${friendlyLanguage}`]
-		) {
-			this.translate = CONFIG.visual.translate;
-			this.languageOverride = CONFIG.visual["translate:detect-language-override"];
-			this.displayMode = CONFIG.visual[`translation-mode:${friendlyLanguage}`];
-
-			if (CONFIG.visual.translate) {
-				const targetConvert = CONFIG.visual[`translation-mode:${friendlyLanguage}`];
-				const isCached = CACHE[lyricsState.uri]?.[targetConvert];
-
-				if (!isCached) {
-					this.translateLyrics(lang, lyrics, targetConvert).then((translated) => {
-						const res = { [targetConvert]: translated };
-						// Cache translated lyrics
-						CACHE[lyricsState.uri] = { ...CACHE[lyricsState.uri], ...res };
-						this.setState({ ...this.state, ...res });
-					});
-				}
-			} else {
-				const resetCache = { furigana: null, romaji: null, hiragana: null, katakana: null, hangul: null, romaja: null, cn: null, hk: null, tw: null };
-				CACHE[lyricsState.uri] = { ...CACHE[lyricsState.uri], ...resetCache };
-			}
-		}
+		// Always show Spanish translation if available, otherwise show original
+		this.state.currentLyrics = lyricsState.spanishTranslation || lyrics;
 	}
 
 	provideLanguageCode(lyrics) {
@@ -538,6 +481,28 @@ class LyricsContainer extends react.Component {
 		} catch (error) {
 			Spicetify.showNotification("Convert Error!", true);
 			console.error(error);
+		}
+	}
+
+	async translateWithLibreTranslate(lyrics, targetLanguage = "en") {
+		if (!lyrics || !Array.isArray(lyrics) || !lyrics.length) return null;
+
+		Spicetify.showNotification("Translating with LibreTranslate...", false, 1000);
+		
+		try {
+			const translatedLyrics = await ProviderLibreTranslate.translateLyrics(lyrics, targetLanguage);
+			
+			if (translatedLyrics) {
+				Spicetify.showNotification("Translation completed!", false, 2000);
+				return translatedLyrics;
+			} else {
+				Spicetify.showNotification("Translation failed", true, 2000);
+				return null;
+			}
+		} catch (error) {
+			console.error("LibreTranslate error:", error);
+			Spicetify.showNotification("Translation error", true, 2000);
+			return null;
 		}
 	}
 
@@ -1019,5 +984,23 @@ class LyricsContainer extends react.Component {
 		if (this.state.isFullscreen) return reactDOM.createPortal(out, this.fullscreenContainer);
 		if (fadLyricsContainer) return reactDOM.createPortal(out, fadLyricsContainer);
 		return out;
+	}
+
+	async translateToSpanish(lyrics) {
+		Spicetify.showNotification("Traduciendo al español...", false, 1000);
+		try {
+			const translatedLyrics = await ProviderLibreTranslate.translateLyrics(lyrics, "es");
+			if (translatedLyrics) {
+				Spicetify.showNotification("¡Traducción completada!", false, 2000);
+				return translatedLyrics;
+			} else {
+				Spicetify.showNotification("Error en la traducción", true, 2000);
+				return null;
+			}
+		} catch (error) {
+			console.error("LibreTranslate error:", error);
+			Spicetify.showNotification("Error en la traducción", true, 2000);
+			return null;
+		}
 	}
 }

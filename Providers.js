@@ -218,6 +218,21 @@ const Providers = {
 
 		return result;
 	},
+	libretranslate: async (info) => {
+		const result = {
+			uri: info.uri,
+			karaoke: null,
+			synced: null,
+			unsynced: null,
+			libreTranslateTranslation: null,
+			provider: "LibreTranslate",
+			copyright: null,
+		};
+
+		// This provider only provides translations, not original lyrics
+		// It should be used in combination with other providers
+		return result;
+	},
 };
 
 

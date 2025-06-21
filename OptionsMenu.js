@@ -128,6 +128,18 @@ const TranslationMenu = react.memo(({ friendlyLanguage, hasTranslation }) => {
 			};
 		}
 
+		// Add LibreTranslate option if enabled
+		if (CONFIG.providers.libretranslate.on) {
+			const targetLanguage = CONFIG.visual["libretranslate-target-language"];
+			const languageName = new Intl.DisplayNames([targetLanguage], {
+				type: "language",
+			}).of(targetLanguage);
+			sourceOptions = {
+				...sourceOptions,
+				libreTranslateTranslation: `${languageName} (LibreTranslate)`,
+			};
+		}
+
 		switch (friendlyLanguage) {
 			case "japanese": {
 				modeOptions = {
